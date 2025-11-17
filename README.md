@@ -23,8 +23,8 @@ This repo contains two sketches for balance sensing:
 
 ## Files
 
-- `firmware/nano33_vest/main.ino`  
-- `firmware/uno_footplate/footplate_sway.ino`
+- `nano33_balance_real.ino`  
+- `footsense.ino`
 
 ## Quick start
 
