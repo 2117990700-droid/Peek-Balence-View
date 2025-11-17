@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>足底平衡监测 · Node WS + Serial (same UI)</title>
+<style>
+  body{margin:0;background:#0D1220;color:#EAF0FF;font:14px/1.45 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  .container{max-width:1100px;margin:0 auto;padding:16px}
+  .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .card{background:#10162B;border:1px solid #2a3353;border-radius:14px;padding:12px}
+  input[type=text]{background:#10162B;border:1px solid #2a3353;color:#fff;border-radius:8px;padding:8px 10px;min-width:260px}
+  .btn{background:#2D6CDF;border:none;border-radius:8px;color:#fff;padding:8px 12px;cursor:pointer}
+  .btn.secondary{background:#26304d}
+  .status{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:#161d34;border:1px solid #2a3353}
+  .status .dot{width:8px;height:8px;border-radius:50%;background:#7a86a8}
+  .status.connected .dot{background:#1EC28B}
+  .status.error .dot{background:#ff5d5d}
+  .spacer{flex:1}
+  .field{display:flex;align-items:center;gap:6px}
+  input[type=range]{accent-color:#F78D20}
+  .main{display:grid;grid-template-columns:320px 1fr;gap:16px;margin-top:16px}
+  .sensor{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .tile{background:#0f1327;border:1px solid #2a3353;border-radius:10px;padding:8px;text-align:center}
+  .plot{width:100%;height:320px;background:#0F1529;border-radius:10px;border:1px solid #2a3353}
+  .info-row{display:flex;gap:12px;margin-top:10px}
+  .metric{flex:1}
+  .metric .chip{display:inline-flex;gap:6px;align-items:center;padding:6px 10px;border-radius:999px;background:#151b33}
+  .metric .dot{width:8px;height:8px;border-radius:50%}
+  .lvl-low .dot{background:#1EC28B}.lvl-mid .dot{background:#F7C120}.lvl-high .dot{background:#FF5D5D}
+  .kv{display:grid;grid-template-columns:120px 1fr;gap:6px;align-items:center}
+  @media(max-width:960px){.main{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="card" style="position:sticky;top:0;z-index:2;">
+      <div class="row">
+        <span>Server (Node)</span>
+        <input id="ipA" type="text" />
+        <button id="btnA" class="btn">连接</button>
+        <button id="btnAoff" class="btn secondary">断开</button>
+        <div id="statusA" class="status"><span class="dot"></span> 未连接</div>
+
+        <div class="spacer"></div>
+
+        <span>Serial (UNO)</span>
+        <button id="btnB" class="btn">连接串口</button>
+        <button id="btnBoff" class="btn secondary">断开串口</button>
+        <div id="statusB" class="status"><span class="dot"></span> 未连接</div>
+
+        <div class="spacer"></div>
+
+        <div class="field">
+          <label for="thr">THR</label>
+          <input id="thr" type="range" min="5" max="120" step="1" value="25">
+          <span id="thrOut">25</span>
+        </div>
+        <button id="btnDemo" class="btn secondary">Demo 开</button>
+      </div>
+    </div>
+
+    <div class="main">
+      <aside class="card">
+        <h3 style="margin-top:0">足底传感器 & 体重</h3>
+        <div class="sensor">
+          <div class="tile" id="A1Val">A1 —</div>
+          <div class="tile" id="B1Val">B1 —</div>
+          <div class="tile" id="C1Val">C1 —</div>
+          <div class="tile" id="A2Val">A2 —</div>
+          <div class="tile" id="B2Val">B2 —</div>
+          <div class="tile" id="C2Val">C2 —</div>
+        </div>
+        <div class="card" style="margin-top:10px">
+          <div class="kv"><div>Weight</div><div id="weightText">—</div></div>
+          <div class="kv"><div>Base Ratio</div><div id="ratioText">—</div></div>
+        </div>
+      </aside>
+
+      <section class="card">
+        <div>实时曲线</div>
+        <canvas id="plot" class="plot" width="900" height="320"></canvas>
+        <div class="info-row">
+          <div id="riskCard" class="card metric lvl-low">
+            <h4>Risk</h4>
+            <div class="line"><span class="chip"><span class="dot"></span><span id="riskText">LOW</span></span></div>
+          </div>
+          <div id="motionCard" class="card metric lvl-low">
+            <h4>状态</h4>
+            <div class="line"><span class="chip"><span class="dot"></span><span id="motionText">静止</span></span></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:12px">
+          <div class="kv"><div>Nano/Scale</div><div id="rawA" style="word-break:break-all;opacity:.9">—</div></div>
+          <div class="kv"><div>Serial</div><div id="rawB" style="word-break:break-all;opacity:.9">—</div></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+<script>
+// ===== plotting / UI =====
+const WEB_SCALE=300, Y_MIN=-120, Y_MAX=120, RMS_WINDOW=150, MID_FACTOR=1.6;
+const canvas=document.getElementById('plot'), ctx=canvas.getContext('2d');
+const W=canvas.width, H=canvas.height, buf=new Array(W).fill(0); let head=0;
+const thr=document.getElementById('thr'), thrOut=document.getElementById('thrOut'); thrOut.textContent=thr.value;
+thr.oninput=()=>{thrOut.textContent=thr.value; render();};
+function yScale(v){const t=(v-Y_MIN)/(Y_MAX-Y_MIN);return H-t*H;}
+function drawGrid(){ctx.save();ctx.strokeStyle='rgba(255,255,255,.06)';ctx.beginPath();for(let x=0;x<W;x+=50){ctx.moveTo(x,0);ctx.lineTo(x,H);}for(let y=0;y<H;y+=32){ctx.moveTo(0,y);ctx.lineTo(W,y);}ctx.stroke();ctx.restore();}
+function drawThreshold(){const y=yScale(parseFloat(thr.value));ctx.save();ctx.setLineDash([6,6]);ctx.strokeStyle='rgba(247,141,32,.6)';ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();ctx.restore();}
+function drawSignal(){ctx.save();ctx.strokeStyle='#F78D20';ctx.lineWidth=2.2;ctx.beginPath();for(let i=0;i<W;i++){const bi=(head-(W-i)+W)%W,y=yScale(buf[bi]);if(i===0)ctx.moveTo(i,y);else ctx.lineTo(i,y);}ctx.stroke();ctx.restore();}
+function render(){ctx.clearRect(0,0,W,H);drawGrid();drawThreshold();drawSignal();}
+function pushValue(n){if(n<Y_MIN)n=Y_MIN;if(n>Y_MAX)n=Y_MAX;buf[head]=n;head=(head+1)%W;updateStatus();render();}
+const riskCard=document.getElementById('riskCard'), motionCard=document.getElementById('motionCard'), riskText=document.getElementById('riskText'), motionText=document.getElementById('motionText');
+function classify(rms,thr){return rms<thr?'low':(rms<thr*MID_FACTOR?'mid':'high');}
+function setLevel(el,l){el.classList.remove('lvl-low','lvl-mid','lvl-high');el.classList.add('lvl-'+l);}
+function updateStatus(){let s2=0,n=0;for(let i=0;i<RMS_WINDOW;i++){const bi=(head-i-1+W)%W,v=buf[bi]||0;s2+=v*v;n++;}const rms=Math.sqrt(s2/Math.max(n,1)),t=parseFloat(thr.value),lvl=classify(rms,t);setLevel(riskCard,lvl);setLevel(motionCard,lvl);riskText.textContent=(lvl==='low'?'LOW':(lvl==='mid'?'MID':'HIGH'));motionText.textContent=(lvl==='low'?'静止':(lvl==='mid'?'轻微活动':'剧烈运动'));}
+const elA1=A1Val,elB1=B1Val,elC1=C1Val,elA2=A2Val,elB2=B2Val,elC2=C2Val,weightText=weightText0=weightText,ratioText=document.getElementById('ratioText');
+function fmtN(x){return Number.isFinite(x)?(x<10?x.toFixed(1):x.toFixed(0)):'—';}
+function updateTiles(vals){if('A1'in vals) elA1.textContent='A1 '+fmtN(vals.A1); if('B1'in vals) elB1.textContent='B1 '+fmtN(vals.B1); if('C1'in vals) elC1.textContent='C1 '+fmtN(vals.C1); if('A2'in vals) elA2.textContent='A2 '+fmtN(vals.A2); if('B2'in vals) elB2.textContent='B2 '+fmtN(vals.B2); if('C2'in vals) elC2.textContent='C2 '+fmtN(vals.C2);
+  const keys=['A1','B1','C1','A2','B2','C2']; if(keys.every(k=>Number.isFinite(vals[k]))){const F=keys.reduce((s,k)=>s+(+vals[k]||0),0); weightText.textContent=(F/9.80665).toFixed(2)+' kg';}}
+const rawA=document.getElementById('rawA'), rawB=document.getElementById('rawB');
+
+// ===== WebSocket (same-origin by default)
+let wsA=null;
+function setStatus(el,ok,msg){el.classList.remove('connected','error'); if(ok===true){el.classList.add('connected'); el.innerHTML='<span class="dot"></span> '+(msg||'已连接');} else if(ok===false){el.classList.add('error'); el.innerHTML='<span class="dot"></span> '+(msg||'错误');} else {el.innerHTML='<span class="dot"></span> '+(msg||'未连接');}}
+function normalizeWsUrl(s){s=(s||'').trim(); if(!s) return ''; if(s.startsWith('ws://')||s.startsWith('wss://')) return s; return `ws://${s}`;}
+const statusA=document.getElementById('statusA'); const ipA=document.getElementById('ipA');
+ipA.value = `ws://${location.host}`;
+document.getElementById('btnA').onclick = function connectA(){
+  const input=ipA.value.trim()||`ws://${location.host}`;
+  const url=normalizeWsUrl(input);
+  try{wsA && wsA.close();}catch{}
+  setStatus(statusA,null,'连接中… '+url);
+  wsA=new WebSocket(url);
+  wsA.onopen = ()=>{ setStatus(statusA,true,'已连接'); try{wsA.send('ROLE:ui');}catch{} };
+  wsA.onerror= (e)=>{ console.error(e); setStatus(statusA,false,'连接错误'); };
+  wsA.onclose= ()=> setStatus(statusA,null,'未连接');
+  wsA.onmessage=(ev)=>{
+    rawA.textContent = ev.data;
+    let o; try{o=JSON.parse(ev.data);}catch{return;}
+    if (o.type==='nano'){
+      if (typeof o.chestRMS==='number') pushValue(o.chestRMS*WEB_SCALE);
+      if (typeof o.fallRisk==='string'){const lv=o.fallRisk.toUpperCase(); if(lv==='LOW'){setLevel(riskCard,'low');} else if(lv==='MEDIUM'){setLevel(riskCard,'mid');} else {setLevel(riskCard,'high');}}
+      if (typeof o.state==='string') motionText.textContent = (o.state==='IMBALANCE')?'轻微活动':'静止';
+      if (typeof o.thrSway==='number'){ thr.value=Math.round(o.thrSway*WEB_SCALE); thrOut.textContent=thr.value; render(); }
+    } else if (o.type==='scale'){
+      const vals={}; ['A1','B1','C1','A2','B2','C2'].forEach(k=>{ if(k in o && Number.isFinite(+o[k])) vals[k]=+o[k]; });
+      if(Object.keys(vals).length) updateTiles(vals);
+      const kg=Number(o.kg ?? o.weightKg ?? o.w); if(Number.isFinite(kg)) weightText.textContent=kg.toFixed(2)+' kg';
+    }
+  };
+};
+document.getElementById('btnAoff').onclick=()=>{ try{wsA && wsA.close();}catch{} setStatus(statusA,null,'未连接'); };
+
+// ===== Web Serial for UNO (same UI row)
+const statusB=document.getElementById('statusB'); let port=null, reader=null, reading=false; const textDecoder=new TextDecoderStream(); let serBuf='';
+async function connectB(){
+  if(!('serial' in navigator)){ alert('请使用 Chrome/Edge (Web Serial)'); return; }
+  try{
+    port=await navigator.serial.requestPort(); await port.open({baudRate:115200});
+    setStatus(statusB,true,'串口已连');
+    const readable=port.readable.pipeThrough(textDecoder); reader=readable.getReader(); reading=true;
+    serBuf=''; (async ()=>{ try{ while(reading){ const {value,done}=await reader.read(); if(done) break; if(value) onSerialChunk(value); } } catch(e){ console.warn('serial error',e); } finally { try{ reader.releaseLock(); }catch{} }})();
+  }catch(e){ console.error(e); setStatus(statusB,false,'串口连接失败'); }
+}
+async function disconnectB(){ reading=false; try{ reader && reader.cancel(); }catch{} try{ port && port.close(); }catch{} setStatus(statusB,null,'未连接'); }
+document.getElementById('btnB').onclick=connectB; document.getElementById('btnBoff').onclick=disconnectB;
+function onSerialChunk(t){ serBuf+=t; let i; while((i=serBuf.indexOf('\n'))>=0){ const line=serBuf.slice(0,i).trim(); serBuf=serBuf.slice(i+1); if(line) onSerialLine(line); } }
+const serVals={A1:NaN,B1:NaN,C1:NaN,A2:NaN,B2:NaN,C2:NaN};
+function onSerialLine(line){
+  rawB.textContent=line;
+  if(line.startsWith('THR:')){ const v=parseFloat(line.slice(4)); if(Number.isFinite(v)){ thr.value=Math.round(v*WEB_SCALE); thrOut.textContent=thr.value; render(); } return; }
+  if(line.startsWith('v:')||line.startsWith('V:')){ const v=parseFloat(line.slice(2)); if(Number.isFinite(v)) pushValue(v); return; }
+  if(line.startsWith('BASE_RATIO_LAST')){ const r=parseFloat(line.split(':')[1]); if(Number.isFinite(r)) ratioText.textContent=r.toFixed(3); else ratioText.textContent='NA'; return; }
+  const m=line.match(/^([ABC][12])\s*:\s*([-+]?\d+(\.\d+)?)\s*N/i); if(m){ serVals[m[1].toUpperCase()]=parseFloat(m[2]); updateTiles(serVals); }
+}
+
+// ===== Demo
+let demo=null,t=0; const btnDemo=document.getElementById('btnDemo');
+function startDemo(){ if(demo) return; demo=setInterval(()=>{ t+=0.04; const base=30*Math.sin(t*0.8)+18*Math.sin(t*0.17+1.2); const noise=(Math.random()-0.5)*14; const burst=(Math.random()<0.02)?(Math.random()*80-40):0; pushValue(base+noise+burst); },20); btnDemo.textContent='Demo 关'; }
+function stopDemo(){ clearInterval(demo); demo=null; btnDemo.textContent='Demo 开'; }
+btnDemo.onclick=()=> demo ? stopDemo() : startDemo();
+
+render();
+</script>
+</body>
+</html>
