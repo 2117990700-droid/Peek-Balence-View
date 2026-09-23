@@ -31,30 +31,67 @@ const uint16_t RETRIGGER_GAP_MS   = 0;
 float BASE_SWAY = 1.2f;
 
 struct Stat { double mean=0, m2=0; unsigned long n=0; };
+// ================= AI FEATURE OUTPUT =================
+bool AI_MODE = true;
+struct AIFootFeatures {
+  float leftPressure;
+  float rightPressure;
+  float totalPressure;
+  float LR_balance;
+  float AP_balance;
+  float sway;
+  float stabilityScore;
+};
+AIFootFeatures footAI;
+// Generate AI features
+AIFootFeatures extractAIFeatures(
+    float FL,
+    float FR,
+    float Ftot,
+    float LR,
+    float AP,
+    float Sway
+){
+  AIFootFeatures f;
+  f.leftPressure = FL;
+  f.rightPressure = FR;
+  f.totalPressure = Ftot;
+  f.LR_balance = LR;
+  f.AP_balance = AP;
+  f.sway = Sway;
+  // simple stability estimation
+  float score =
+      100.0f
+      -
+      fabs(LR)*30.0f
+      -
+      fabs(AP)*30.0f
+      -
+      Sway*40.0f;
+  if(score < 0)
+      score = 0;
+  f.stabilityScore = score;
+  return f;
+}
 static inline void updStat(Stat& s, double x){
   s.n++; double d = x - s.mean; s.mean += d / s.n; s.m2 += d * (x - s.mean);
 }
-
 static bool inContact=false, testing=false;
 static unsigned long tContact=0, tEnd=0, tLastDone=0;
 static Stat sLR, sAP;
-
 static float LAST_LR_rms = -1.0f;
 static float LAST_AP_rms = -1.0f;
 static float LAST_Sway   = -1.0f;
 static float LAST_Ratio  = -1.0f;
 static const char* LAST_Grade = "NA";
-
 float zero_feat[6]  = {0};
 float scale_ch[6];
 float offset_ch[6];
 bool  has_zero[6]   = {false};
 bool  has_gain[6]   = {false};
-
 float   acc_feat[6] = {0};
 uint8_t winCount    = 0;
 const uint8_t WIN_AVG = 8;
-
 uint16_t read_adc_med3(uint8_t pin){
   uint16_t a = analogRead(pin);
   uint16_t b = analogRead(pin);
@@ -62,7 +99,6 @@ uint16_t read_adc_med3(uint8_t pin){
   // 返回中位数
   return max(min(a,b), min(max(a,b), c));
 }
-
 static inline float counts_to_feat(float adc_counts_avg) {
 #if USE_RAW_FEAT
   return adc_counts_avg;
@@ -73,10 +109,8 @@ static inline float counts_to_feat(float adc_counts_avg) {
   return feat;
 #endif
 }
-
 static inline float fallback_feat_to_N(float feat) {
 #if USE_RAW_FEAT
-
   const float K = 200.0f / 1023.0f;
   return feat * K;
 #else
@@ -84,7 +118,6 @@ static inline float fallback_feat_to_N(float feat) {
   return feat * GF_TO_N;
 #endif
 }
-
 float read_channel_feat(uint8_t ch, uint16_t samples) {
   uint8_t pin = CH_PINS[ch];
   (void)analogRead(pin);
@@ -109,7 +142,37 @@ float feat_to_output_N(uint8_t ch, float feat) {
   if (N < OUT_THRESH_N) N = 0.0f;
   return N;
 }
+void sendAIFeatures(AIFootFeatures f)
+{
 
+  if(!AI_MODE)
+      return;
+
+
+  Serial.print("{");
+  Serial.print("\"type\":\"foot_features\",");
+  Serial.print("\"leftPressure\":");
+  Serial.print(f.leftPressure,3);
+  Serial.print(",");
+  Serial.print("\"rightPressure\":");
+  Serial.print(f.rightPressure,3);
+  Serial.print(",");
+  Serial.print("\"totalPressure\":");
+  Serial.print(f.totalPressure,3);
+  Serial.print(",");
+  Serial.print("\"LR\":");
+  Serial.print(f.LR_balance,4);
+  Serial.print(",");
+  Serial.print("\"AP\":");
+  Serial.print(f.AP_balance,4);
+  Serial.print(",");
+  Serial.print("\"sway\":");
+  Serial.print(f.sway,4);
+  Serial.print(",");
+  Serial.print("\"stabilityScore\":");
+  Serial.print(f.stabilityScore,2);
+  Serial.println("}");
+}
 void print_help() {
   Serial.println(F("Commands:"));
   Serial.println(F("  help"));
@@ -331,6 +394,19 @@ void loop() {
         LAST_Sway   = (float)Sway;
         LAST_Grade  = grade;
         LAST_Ratio  = ratio_out; 
+        // ===== AI Feature Generation =====
+
+         footAI = extractAIFeatures(
+         FL,
+         FR,
+         Ftot,
+         LR,
+         AP,
+        (float)Sway
+);
+
+
+sendAIFeatures(footAI);
       }
     }
 

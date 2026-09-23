@@ -1,188 +1,488 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>足底平衡监测 · Node WS + Serial (same UI)</title>
-<style>
-  body{margin:0;background:#0D1220;color:#EAF0FF;font:14px/1.45 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-  .container{max-width:1100px;margin:0 auto;padding:16px}
-  .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-  .card{background:#10162B;border:1px solid #2a3353;border-radius:14px;padding:12px}
-  input[type=text]{background:#10162B;border:1px solid #2a3353;color:#fff;border-radius:8px;padding:8px 10px;min-width:260px}
-  .btn{background:#2D6CDF;border:none;border-radius:8px;color:#fff;padding:8px 12px;cursor:pointer}
-  .btn.secondary{background:#26304d}
-  .status{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:#161d34;border:1px solid #2a3353}
-  .status .dot{width:8px;height:8px;border-radius:50%;background:#7a86a8}
-  .status.connected .dot{background:#1EC28B}
-  .status.error .dot{background:#ff5d5d}
-  .spacer{flex:1}
-  .field{display:flex;align-items:center;gap:6px}
-  input[type=range]{accent-color:#F78D20}
-  .main{display:grid;grid-template-columns:320px 1fr;gap:16px;margin-top:16px}
-  .sensor{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-  .tile{background:#0f1327;border:1px solid #2a3353;border-radius:10px;padding:8px;text-align:center}
-  .plot{width:100%;height:320px;background:#0F1529;border-radius:10px;border:1px solid #2a3353}
-  .info-row{display:flex;gap:12px;margin-top:10px}
-  .metric{flex:1}
-  .metric .chip{display:inline-flex;gap:6px;align-items:center;padding:6px 10px;border-radius:999px;background:#151b33}
-  .metric .dot{width:8px;height:8px;border-radius:50%}
-  .lvl-low .dot{background:#1EC28B}.lvl-mid .dot{background:#F7C120}.lvl-high .dot{background:#FF5D5D}
-  .kv{display:grid;grid-template-columns:120px 1fr;gap:6px;align-items:center}
-  @media(max-width:960px){.main{grid-template-columns:1fr}}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PEEK Balance View · AI</title>
+  <style>
+    :root{
+      --brown-900:#632114;
+      --brown-700:#8A3928;
+      --terracotta:#B1503D;
+      --coral-deep:#D86851;
+      --coral:#FF7F65;
+      --salmon:#FF9984;
+      --peach:#FFB2A3;
+      --blush:#FFCCC1;
+      --rose:#FFD9D1;
+      --cream:#FFF0EC;
+      --paper:#FFFCFA;
+      --white:#FFFFFF;
+      --text:#54251D;
+      --muted:#936C64;
+      --line:rgba(216,104,81,.20);
+      --shadow:0 18px 55px rgba(99,33,20,.10);
+    }
+    *{box-sizing:border-box}
+    body{
+      min-height:100vh;
+      margin:0;
+      color:var(--text);
+      font-family:Inter,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+      background:
+        radial-gradient(circle at 7% 4%,rgba(255,127,101,.28),transparent 30%),
+        radial-gradient(circle at 92% 12%,rgba(255,178,163,.36),transparent 28%),
+        linear-gradient(135deg,#fff 0%,#fff8f5 48%,#fff0ec 100%);
+      background-attachment:fixed;
+    }
+    body:before{
+      content:"";
+      position:fixed;
+      inset:0;
+      pointer-events:none;
+      opacity:.48;
+      background-image:
+        linear-gradient(rgba(177,80,61,.055) 1px,transparent 1px),
+        linear-gradient(90deg,rgba(177,80,61,.055) 1px,transparent 1px);
+      background-size:34px 34px;
+      mask-image:linear-gradient(to bottom,black,transparent 82%);
+    }
+    .wrap{position:relative;max-width:1180px;margin:auto;padding:28px 24px 40px}
+    .top,.panel{
+      position:relative;
+      overflow:hidden;
+      background:rgba(255,255,255,.82);
+      border:1px solid rgba(255,178,163,.52);
+      border-radius:20px;
+      box-shadow:var(--shadow);
+      backdrop-filter:blur(18px);
+    }
+    .top:before,.panel:before{
+      content:"";
+      position:absolute;
+      left:0;right:0;top:0;
+      height:3px;
+      background:linear-gradient(90deg,var(--brown-700),var(--coral),var(--peach),transparent 92%);
+    }
+    .top{padding:18px 20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .brand{font-weight:900;font-size:21px;letter-spacing:-.02em;margin-right:auto;color:var(--brown-900)}
+    .brand span{
+      color:transparent;
+      background:linear-gradient(90deg,var(--coral-deep),var(--coral),var(--salmon));
+      background-clip:text;
+      -webkit-background-clip:text;
+    }
+    input,select,button{
+      min-height:42px;
+      border:1px solid rgba(216,104,81,.24);
+      border-radius:11px;
+      background:rgba(255,255,255,.82);
+      color:var(--text);
+      padding:10px 13px;
+      font:inherit;
+      outline:none;
+      transition:.2s ease;
+    }
+    input{width:240px}
+    input:focus,select:focus{border-color:var(--coral);box-shadow:0 0 0 4px rgba(255,127,101,.13)}
+    button{
+      cursor:pointer;
+      color:white;
+      border-color:transparent;
+      font-weight:800;
+      background:linear-gradient(135deg,var(--coral),var(--coral-deep));
+      box-shadow:0 8px 20px rgba(216,104,81,.22);
+    }
+    button:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 11px 25px rgba(216,104,81,.30)}
+    button.secondary{background:linear-gradient(135deg,var(--brown-700),var(--terracotta))}
+    button.danger{background:linear-gradient(135deg,var(--terracotta),var(--brown-700))}
+    button.demo-button{background:linear-gradient(110deg,var(--brown-900),var(--coral-deep) 58%,var(--coral));box-shadow:0 10px 24px rgba(138,57,40,.25)}
+    button:disabled{cursor:not-allowed;opacity:.42;box-shadow:none}
+    .dot{width:9px;height:9px;border-radius:50%;display:inline-block;background:var(--brown-700);margin-right:7px;box-shadow:0 0 0 4px rgba(138,57,40,.10)}
+    .dot.ok{background:var(--coral);box-shadow:0 0 0 4px rgba(255,127,101,.17),0 0 15px rgba(255,127,101,.60)}
+    .status{color:var(--muted);font-size:13px}
+    .grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin-top:16px}
+    .panel{padding:20px}
+    .panel h2{display:flex;align-items:center;gap:9px;font-size:14px;letter-spacing:.06em;text-transform:uppercase;margin:0 0 16px;color:var(--brown-700)}
+    .panel h2:before{content:"";width:8px;height:8px;border-radius:3px;background:linear-gradient(135deg,var(--coral),var(--salmon));box-shadow:0 0 12px rgba(255,127,101,.45)}
+    .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    .metric{
+      padding:15px;
+      border-radius:14px;
+      background:linear-gradient(145deg,rgba(255,255,255,.95),rgba(255,238,232,.72));
+      border:1px solid rgba(255,178,163,.43);
+      box-shadow:inset 0 1px 0 white,0 8px 22px rgba(177,80,61,.06);
+    }
+    .metric label{display:block;color:var(--muted);font-size:12px}
+    .metric strong{display:block;font-size:23px;margin-top:6px;color:var(--brown-900);font-variant-numeric:tabular-nums}
+    .metric small{color:#b7897f}
+    .prediction{
+      display:flex;
+      align-items:center;
+      gap:18px;
+      padding:23px;
+      color:white;
+      background:
+        radial-gradient(circle at 95% 0,rgba(255,178,163,.55),transparent 35%),
+        linear-gradient(135deg,var(--brown-900),var(--terracotta) 56%,var(--coral));
+      border-radius:16px;
+      border:1px solid rgba(255,255,255,.18);
+      box-shadow:0 16px 32px rgba(99,33,20,.20);
+    }
+    .ring{width:98px;height:98px;flex:0 0 98px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--coral) 0deg,rgba(255,255,255,.20) 0deg);position:relative;box-shadow:0 0 28px rgba(255,153,132,.28)}
+    .ring:after{content:"";position:absolute;inset:9px;background:linear-gradient(145deg,#7a2d20,#9d4432);border-radius:50%;box-shadow:inset 0 1px 8px rgba(0,0,0,.24)}
+    .ring span{z-index:1;font-weight:900;font-size:20px;color:white}
+    .pred-name{font-size:28px;font-weight:900;color:white;letter-spacing:-.02em}
+    .prediction .muted{color:rgba(255,255,255,.72)}
+    .muted{color:var(--muted)}
+    .controls{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+    .badge{padding:6px 10px;border:1px solid var(--rose);border-radius:999px;background:var(--cream);color:var(--brown-700);font-size:12px}
+    .badge.on{background:linear-gradient(90deg,var(--coral-deep),var(--coral));border-color:transparent;color:white;box-shadow:0 7px 16px rgba(216,104,81,.23)}
+    .message{min-height:22px;margin-top:11px;color:var(--muted)}
+    .demo-progress{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;margin-top:14px;padding:12px 14px;border:1px solid rgba(255,153,132,.5);border-radius:13px;background:linear-gradient(110deg,rgba(255,240,236,.92),rgba(255,255,255,.9))}
+    .demo-progress[hidden]{display:none}.demo-phase{font-weight:800;color:var(--brown-700);white-space:nowrap}.progress-track{height:8px;overflow:hidden;border-radius:999px;background:var(--rose)}.progress-fill{width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--brown-700),var(--coral),var(--peach));box-shadow:0 0 14px rgba(255,127,101,.55);transition:width .12s linear}.progress-text{min-width:54px;text-align:right;font-weight:800;color:var(--coral-deep);font-variant-numeric:tabular-nums}
+    canvas{width:100%;height:190px;background:linear-gradient(180deg,rgba(255,255,255,.86),rgba(255,240,236,.64));border-radius:13px;border:1px solid rgba(255,178,163,.42)}
+    .full{grid-column:1/-1}
+    .raw{margin-top:10px;padding:10px 12px;border-radius:10px;background:#fff7f3;border:1px solid var(--rose);font:12px Consolas,monospace;color:var(--terracotta);word-break:break-all;max-height:80px;overflow:auto}
+    @media(max-width:850px){.grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}.full{grid-column:auto}.wrap{padding:16px}.top{align-items:stretch}.brand{width:100%}input{width:100%}}
+  </style>
 </head>
 <body>
-  <div class="container">
-    <div class="card" style="position:sticky;top:0;z-index:2;">
-      <div class="row">
-        <span>Server (Node)</span>
-        <input id="ipA" type="text" />
-        <button id="btnA" class="btn">连接</button>
-        <button id="btnAoff" class="btn secondary">断开</button>
-        <div id="statusA" class="status"><span class="dot"></span> 未连接</div>
+<main class="wrap">
+  <header class="top">
+    <div class="brand">PEEK <span>Balance AI</span></div>
+    <input id="wsUrl" value="ws://localhost:8081" aria-label="WebSocket 地址">
+    <button id="connectBtn">连接</button>
+    <div class="status"><span id="connectionDot" class="dot"></span><span id="connectionText">未连接</span></div>
+  </header>
 
-        <div class="spacer"></div>
-
-        <span>Serial (UNO)</span>
-        <button id="btnB" class="btn">连接串口</button>
-        <button id="btnBoff" class="btn secondary">断开串口</button>
-        <div id="statusB" class="status"><span class="dot"></span> 未连接</div>
-
-        <div class="spacer"></div>
-
-        <div class="field">
-          <label for="thr">THR</label>
-          <input id="thr" type="range" min="5" max="120" step="1" value="25">
-          <span id="thrOut">25</span>
-        </div>
-        <button id="btnDemo" class="btn secondary">Demo 开</button>
+  <section class="grid">
+    <article class="panel">
+      <h2>实时融合特征</h2>
+      <div class="metrics">
+        <div class="metric"><label>胸部摆动</label><strong id="chest">—</strong><small>g RMS</small></div>
+        <div class="metric"><label>腰部摆动</label><strong id="waist">—</strong><small>g RMS</small></div>
+        <div class="metric"><label>步频</label><strong id="step">—</strong><small>steps/s</small></div>
+        <div class="metric"><label>左脚压力</label><strong id="left">—</strong><small>N</small></div>
+        <div class="metric"><label>右脚压力</label><strong id="right">—</strong><small>N</small></div>
+        <div class="metric"><label>足底摆动</label><strong id="footSway">—</strong><small>index</small></div>
       </div>
-    </div>
+    </article>
 
-    <div class="main">
-      <aside class="card">
-        <h3 style="margin-top:0">足底传感器 & 体重</h3>
-        <div class="sensor">
-          <div class="tile" id="A1Val">A1 —</div>
-          <div class="tile" id="B1Val">B1 —</div>
-          <div class="tile" id="C1Val">C1 —</div>
-          <div class="tile" id="A2Val">A2 —</div>
-          <div class="tile" id="B2Val">B2 —</div>
-          <div class="tile" id="C2Val">C2 —</div>
-        </div>
-        <div class="card" style="margin-top:10px">
-          <div class="kv"><div>Weight</div><div id="weightText">—</div></div>
-          <div class="kv"><div>Base Ratio</div><div id="ratioText">—</div></div>
-        </div>
-      </aside>
+    <article class="panel">
+      <h2>AI Prediction</h2>
+      <div class="prediction">
+        <div id="confidenceRing" class="ring"><span id="confidence">—</span></div>
+        <div><div id="prediction" class="pred-name">未训练</div><div id="modelState" class="muted">等待训练模型</div></div>
+      </div>
+      <div id="probabilities" class="message"></div>
+    </article>
 
-      <section class="card">
-        <div>实时曲线</div>
-        <canvas id="plot" class="plot" width="900" height="320"></canvas>
-        <div class="info-row">
-          <div id="riskCard" class="card metric lvl-low">
-            <h4>Risk</h4>
-            <div class="line"><span class="chip"><span class="dot"></span><span id="riskText">LOW</span></span></div>
-          </div>
-          <div id="motionCard" class="card metric lvl-low">
-            <h4>状态</h4>
-            <div class="line"><span class="chip"><span class="dot"></span><span id="motionText">静止</span></span></div>
-          </div>
-        </div>
-        <div class="card" style="margin-top:12px">
-          <div class="kv"><div>Nano/Scale</div><div id="rawA" style="word-break:break-all;opacity:.9">—</div></div>
-          <div class="kv"><div>Serial</div><div id="rawB" style="word-break:break-all;opacity:.9">—</div></div>
-        </div>
-      </section>
-    </div>
-  </div>
+    <article class="panel">
+      <h2>数据采集与训练</h2>
+      <div class="controls">
+        <select id="labelSelect">
+          <option value="NORMAL">NORMAL · 正常</option>
+          <option value="WARNING">WARNING · 不稳定</option>
+          <option value="HIGH_RISK">HIGH_RISK · 高风险</option>
+        </select>
+        <button id="startCollect">开始采集</button>
+        <button id="stopCollect" class="danger">停止采集</button>
+        <button id="trainBtn" class="secondary">训练模型</button>
+        <button id="demoTrainingBtn" class="demo-button">启动模拟训练</button>
+      </div>
+      <div class="message">
+        <span id="collectionBadge" class="badge">未采集</span>
+        <span id="sampleCount">0 条样本</span>
+      </div>
+      <div id="operationMessage" class="message">选择标签后开始采集。</div>
+      <div id="demoProgress" class="demo-progress" hidden aria-live="polite">
+        <span id="demoPhase" class="demo-phase">准备模拟</span>
+        <div class="progress-track"><div id="demoFill" class="progress-fill"></div></div>
+        <span id="demoProgressText" class="progress-text">0%</span>
+      </div>
+    </article>
+
+    <article class="panel">
+      <h2>系统状态</h2>
+      <div class="metrics">
+        <div class="metric"><label>IMU 规则风险</label><strong id="ruleRisk">—</strong></div>
+        <div class="metric"><label>IMU 稳定分</label><strong id="imuScore">—</strong></div>
+        <div class="metric"><label>足底稳定分</label><strong id="footScore">—</strong></div>
+      </div>
+    </article>
+
+    <article class="panel full">
+      <h2>稳定分趋势</h2>
+      <canvas id="chart" width="1100" height="190"></canvas>
+      <div id="raw" class="raw">等待数据…</div>
+    </article>
+  </section>
+</main>
 
 <script>
-// ===== plotting / UI =====
-const WEB_SCALE=300, Y_MIN=-120, Y_MAX=120, RMS_WINDOW=150, MID_FACTOR=1.6;
-const canvas=document.getElementById('plot'), ctx=canvas.getContext('2d');
-const W=canvas.width, H=canvas.height, buf=new Array(W).fill(0); let head=0;
-const thr=document.getElementById('thr'), thrOut=document.getElementById('thrOut'); thrOut.textContent=thr.value;
-thr.oninput=()=>{thrOut.textContent=thr.value; render();};
-function yScale(v){const t=(v-Y_MIN)/(Y_MAX-Y_MIN);return H-t*H;}
-function drawGrid(){ctx.save();ctx.strokeStyle='rgba(255,255,255,.06)';ctx.beginPath();for(let x=0;x<W;x+=50){ctx.moveTo(x,0);ctx.lineTo(x,H);}for(let y=0;y<H;y+=32){ctx.moveTo(0,y);ctx.lineTo(W,y);}ctx.stroke();ctx.restore();}
-function drawThreshold(){const y=yScale(parseFloat(thr.value));ctx.save();ctx.setLineDash([6,6]);ctx.strokeStyle='rgba(247,141,32,.6)';ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();ctx.restore();}
-function drawSignal(){ctx.save();ctx.strokeStyle='#F78D20';ctx.lineWidth=2.2;ctx.beginPath();for(let i=0;i<W;i++){const bi=(head-(W-i)+W)%W,y=yScale(buf[bi]);if(i===0)ctx.moveTo(i,y);else ctx.lineTo(i,y);}ctx.stroke();ctx.restore();}
-function render(){ctx.clearRect(0,0,W,H);drawGrid();drawThreshold();drawSignal();}
-function pushValue(n){if(n<Y_MIN)n=Y_MIN;if(n>Y_MAX)n=Y_MAX;buf[head]=n;head=(head+1)%W;updateStatus();render();}
-const riskCard=document.getElementById('riskCard'), motionCard=document.getElementById('motionCard'), riskText=document.getElementById('riskText'), motionText=document.getElementById('motionText');
-function classify(rms,thr){return rms<thr?'low':(rms<thr*MID_FACTOR?'mid':'high');}
-function setLevel(el,l){el.classList.remove('lvl-low','lvl-mid','lvl-high');el.classList.add('lvl-'+l);}
-function updateStatus(){let s2=0,n=0;for(let i=0;i<RMS_WINDOW;i++){const bi=(head-i-1+W)%W,v=buf[bi]||0;s2+=v*v;n++;}const rms=Math.sqrt(s2/Math.max(n,1)),t=parseFloat(thr.value),lvl=classify(rms,t);setLevel(riskCard,lvl);setLevel(motionCard,lvl);riskText.textContent=(lvl==='low'?'LOW':(lvl==='mid'?'MID':'HIGH'));motionText.textContent=(lvl==='low'?'静止':(lvl==='mid'?'轻微活动':'剧烈运动'));}
-const elA1=A1Val,elB1=B1Val,elC1=C1Val,elA2=A2Val,elB2=B2Val,elC2=C2Val,weightText=weightText0=weightText,ratioText=document.getElementById('ratioText');
-function fmtN(x){return Number.isFinite(x)?(x<10?x.toFixed(1):x.toFixed(0)):'—';}
-function updateTiles(vals){if('A1'in vals) elA1.textContent='A1 '+fmtN(vals.A1); if('B1'in vals) elB1.textContent='B1 '+fmtN(vals.B1); if('C1'in vals) elC1.textContent='C1 '+fmtN(vals.C1); if('A2'in vals) elA2.textContent='A2 '+fmtN(vals.A2); if('B2'in vals) elB2.textContent='B2 '+fmtN(vals.B2); if('C2'in vals) elC2.textContent='C2 '+fmtN(vals.C2);
-  const keys=['A1','B1','C1','A2','B2','C2']; if(keys.every(k=>Number.isFinite(vals[k]))){const F=keys.reduce((s,k)=>s+(+vals[k]||0),0); weightText.textContent=(F/9.80665).toFixed(2)+' kg';}}
-const rawA=document.getElementById('rawA'), rawB=document.getElementById('rawB');
+  const byId = (id) => document.getElementById(id);
+  const values = [];
+  let socket = null;
+  let clientDemoActive = false;
+  let demoRunId = 0;
+  let demoUseTimer = null;
 
-// ===== WebSocket (same-origin by default)
-let wsA=null;
-function setStatus(el,ok,msg){el.classList.remove('connected','error'); if(ok===true){el.classList.add('connected'); el.innerHTML='<span class="dot"></span> '+(msg||'已连接');} else if(ok===false){el.classList.add('error'); el.innerHTML='<span class="dot"></span> '+(msg||'错误');} else {el.innerHTML='<span class="dot"></span> '+(msg||'未连接');}}
-function normalizeWsUrl(s){s=(s||'').trim(); if(!s) return ''; if(s.startsWith('ws://')||s.startsWith('wss://')) return s; return `ws://${s}`;}
-const statusA=document.getElementById('statusA'); const ipA=document.getElementById('ipA');
-ipA.value = `ws://${location.host}`;
-document.getElementById('btnA').onclick = function connectA(){
-  const input=ipA.value.trim()||`ws://${location.host}`;
-  const url=normalizeWsUrl(input);
-  try{wsA && wsA.close();}catch{}
-  setStatus(statusA,null,'连接中… '+url);
-  wsA=new WebSocket(url);
-  wsA.onopen = ()=>{ setStatus(statusA,true,'已连接'); try{wsA.send('ROLE:ui');}catch{} };
-  wsA.onerror= (e)=>{ console.error(e); setStatus(statusA,false,'连接错误'); };
-  wsA.onclose= ()=> setStatus(statusA,null,'未连接');
-  wsA.onmessage=(ev)=>{
-    rawA.textContent = ev.data;
-    let o; try{o=JSON.parse(ev.data);}catch{return;}
-    if (o.type==='nano'){
-      if (typeof o.chestRMS==='number') pushValue(o.chestRMS*WEB_SCALE);
-      if (typeof o.fallRisk==='string'){const lv=o.fallRisk.toUpperCase(); if(lv==='LOW'){setLevel(riskCard,'low');} else if(lv==='MEDIUM'){setLevel(riskCard,'mid');} else {setLevel(riskCard,'high');}}
-      if (typeof o.state==='string') motionText.textContent = (o.state==='IMBALANCE')?'轻微活动':'静止';
-      if (typeof o.thrSway==='number'){ thr.value=Math.round(o.thrSway*WEB_SCALE); thrOut.textContent=thr.value; render(); }
-    } else if (o.type==='scale'){
-      const vals={}; ['A1','B1','C1','A2','B2','C2'].forEach(k=>{ if(k in o && Number.isFinite(+o[k])) vals[k]=+o[k]; });
-      if(Object.keys(vals).length) updateTiles(vals);
-      const kg=Number(o.kg ?? o.weightKg ?? o.w); if(Number.isFinite(kg)) weightText.textContent=kg.toFixed(2)+' kg';
+  function number(value, digits = 3) {
+    const result = Number(value);
+    return Number.isFinite(result) ? result.toFixed(digits) : "—";
+  }
+
+  function send(data) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      byId("operationMessage").textContent = "请先连接服务器。";
+      return false;
+    }
+    socket.send(JSON.stringify(data));
+    return true;
+  }
+
+  function connect() {
+    if (socket) socket.close();
+    byId("connectionText").textContent = "连接中…";
+    socket = new WebSocket(byId("wsUrl").value.trim());
+    socket.onopen = () => {
+      byId("connectionDot").classList.add("ok");
+      byId("connectionText").textContent = "已连接";
+      send({ type: "get_status" });
+    };
+    socket.onclose = () => {
+      byId("connectionDot").classList.remove("ok");
+      byId("connectionText").textContent = "未连接";
+    };
+    socket.onerror = () => { byId("connectionText").textContent = "连接失败"; };
+    socket.onmessage = (event) => {
+      let message;
+      try { message = JSON.parse(event.data); } catch { return; }
+      if (["nano", "foot_features", "ai_features", "ai_prediction"].includes(message.type)) {
+        byId("raw").textContent = event.data;
+      }
+      handleMessage(message);
+    };
+  }
+
+  function handleMessage(message) {
+    if (clientDemoActive && ["system_status", "ai_features", "ai_prediction", "training_status"].includes(message.type)) return;
+    if (message.type === "system_status") updateStatus(message);
+    if (message.type === "ai_features") updateFeatures(message.data);
+    if (message.type === "ai_prediction") updatePrediction(message);
+    if (message.type === "training_status") {
+      byId("operationMessage").textContent = message.message;
+      byId("trainBtn").disabled = Boolean(message.running);
+      if (message.success) send({ type: "get_status" });
+    }
+    if (message.type === "control_error" || message.type === "prediction_error") {
+      byId("operationMessage").textContent = message.message;
+    }
+  }
+
+  function updateStatus(status) {
+    const count = status.sampleCount || 0;
+    byId("sampleCount").textContent = `${count} 条真实样本`;
+    byId("modelState").textContent = status.modelMessage || "模型未训练";
+    byId("collectionBadge").textContent = status.collecting ? `采集中 · ${status.currentLabel}` : "未采集";
+    byId("collectionBadge").classList.toggle("on", Boolean(status.collecting));
+    byId("trainBtn").disabled = Boolean(status.training) || count < 30;
+    byId("trainBtn").title = count < 30 ? "至少采集 30 条真实样本后才能训练" : "训练真实数据模型";
+    if (status.demoMode && count < 30) {
+      byId("operationMessage").textContent = "演示模型已加载；采集至少 30 条真实样本后可训练真实模型。";
+    }
+    if (!status.modelReady) {
+      byId("prediction").textContent = "未训练";
+      byId("confidence").textContent = "—";
+    }
+  }
+
+  function updateFeatures(data) {
+    byId("chest").textContent = number(data.chestSway);
+    byId("waist").textContent = number(data.waistSway);
+    byId("step").textContent = number(data.stepFrequency, 2);
+    byId("left").textContent = number(data.leftPressure, 1);
+    byId("right").textContent = number(data.rightPressure, 1);
+    byId("footSway").textContent = number(data.footSway);
+    byId("ruleRisk").textContent = data.ruleBasedRisk || "—";
+    byId("imuScore").textContent = number(data.imuBalanceScore, 1);
+    byId("footScore").textContent = number(data.footStabilityScore, 1);
+    values.push(Number(data.imuBalanceScore));
+    if (values.length > 180) values.shift();
+    drawChart();
+  }
+
+  function updatePrediction(data) {
+    byId("prediction").textContent = data.prediction || "—";
+    const percent = Number.isFinite(data.confidence) ? Math.round(data.confidence * 100) : 0;
+    byId("confidence").textContent = `${percent}%`;
+    byId("confidenceRing").style.background = `conic-gradient(#FFB2A3 ${percent * 3.6}deg,rgba(255,255,255,.20) 0deg)`;
+    byId("probabilities").textContent = Object.entries(data.probabilities || {})
+      .map(([label, value]) => `${label} ${(value * 100).toFixed(1)}%`).join(" · ");
+  }
+
+  function wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function randomBetween(min, max) {
+    return min + Math.random() * (max - min);
+  }
+
+  function makeDemoSample(label) {
+    let chest, waist, step, lr, ap, footSway, imuScore, footScore;
+    if (label === "NORMAL") {
+      chest=randomBetween(.025,.085); waist=randomBetween(.02,.075); step=randomBetween(.85,1.65);
+      lr=randomBetween(-.08,.08); ap=randomBetween(-.09,.09); footSway=randomBetween(.035,.13);
+      imuScore=randomBetween(82,98); footScore=randomBetween(84,98);
+    } else if (label === "WARNING") {
+      chest=randomBetween(.09,.23); waist=randomBetween(.08,.21); step=randomBetween(.35,1.05);
+      lr=randomBetween(-.27,.27); ap=randomBetween(-.25,.25); footSway=randomBetween(.16,.43);
+      imuScore=randomBetween(48,74); footScore=randomBetween(50,76);
+    } else {
+      chest=randomBetween(.23,.48); waist=randomBetween(.20,.43); step=randomBetween(.05,.55);
+      lr=randomBetween(-.52,.52); ap=randomBetween(-.48,.48); footSway=randomBetween(.46,1.0);
+      imuScore=randomBetween(12,42); footScore=randomBetween(15,45);
+    }
+    const total=randomBetween(540,760);
+    return {
+      timestamp:Date.now(), chestSway:chest, waistSway:waist,
+      swayDifference:Math.abs(chest-waist), stepFrequency:step,
+      imuBalanceScore:imuScore, leftPressure:total*(1-lr)/2,
+      rightPressure:total*(1+lr)/2, totalPressure:total,
+      lrBalance:lr, apBalance:ap, footSway, footStabilityScore:footScore,
+      ruleBasedRisk:label === "NORMAL" ? "LOW" : (label === "WARNING" ? "MEDIUM" : "HIGH")
+    };
+  }
+
+  function setDemoProgress(phase, percent, text) {
+    byId("demoPhase").textContent=phase;
+    byId("demoFill").style.width=`${Math.max(0,Math.min(100,percent))}%`;
+    byId("demoProgressText").textContent=text ?? `${Math.round(percent)}%`;
+  }
+
+  function setDemoControls(active) {
+    ["labelSelect","startCollect","stopCollect","trainBtn"].forEach((id)=>{byId(id).disabled=active;});
+    byId("demoTrainingBtn").textContent=active ? "停止模拟" : "启动模拟训练";
+  }
+
+  async function startDemoTraining() {
+    const runId=++demoRunId;
+    clientDemoActive=true;
+    clearInterval(demoUseTimer);
+    values.length=0;
+    setDemoControls(true);
+    byId("demoProgress").hidden=false;
+    byId("modelState").textContent="模拟训练流程";
+    byId("prediction").textContent="导入中";
+    byId("operationMessage").textContent="正在导入 60 条合成训练样本，不写入真实数据集。";
+
+    const labels=["NORMAL","WARNING","HIGH_RISK"];
+    for(let index=0;index<60;index++){
+      if(runId!==demoRunId)return;
+      const sample=makeDemoSample(labels[index%3]);
+      updateFeatures(sample);
+      const current=index+1, percent=current/60*100;
+      byId("sampleCount").textContent=`${current} / 60 条模拟样本`;
+      byId("collectionBadge").textContent="模拟导入中";
+      byId("collectionBadge").classList.add("on");
+      byId("confidence").textContent=`${current}/60`;
+      byId("confidenceRing").style.background=`conic-gradient(#FFB2A3 ${percent*3.6}deg,rgba(255,255,255,.20) 0deg)`;
+      setDemoProgress("数据导入",percent,`${current}/60`);
+      await wait(65);
+    }
+
+    byId("prediction").textContent="训练中";
+    byId("collectionBadge").textContent="样本已就绪";
+    byId("operationMessage").textContent="正在训练 Random Forest 演示模型…";
+    for(let percent=0;percent<=100;percent+=2){
+      if(runId!==demoRunId)return;
+      if(percent%10===0)updateFeatures(makeDemoSample(labels[Math.floor(percent/10)%3]));
+      byId("confidence").textContent=`${percent}%`;
+      byId("confidenceRing").style.background=`conic-gradient(#FFB2A3 ${percent*3.6}deg,rgba(255,255,255,.20) 0deg)`;
+      setDemoProgress("模型训练",percent,`${percent}%`);
+      await wait(35);
+    }
+
+    if(runId!==demoRunId)return;
+    byId("modelState").textContent="模拟模型 · 实时推理运行中";
+    byId("operationMessage").textContent="训练完成，正在模拟实时使用状态。";
+    byId("collectionBadge").textContent="实时推理中";
+    setDemoProgress("模型使用",100,"运行中");
+    let tick=0;
+    const useLabels=["NORMAL","NORMAL","WARNING","NORMAL","HIGH_RISK","WARNING"];
+    const runInference=()=>{
+      if(runId!==demoRunId)return;
+      const label=useLabels[tick++%useLabels.length];
+      const sample=makeDemoSample(label);
+      const confidence=label==="NORMAL"?randomBetween(.88,.97):randomBetween(.76,.93);
+      updateFeatures(sample);
+      updatePrediction({
+        prediction:label,
+        confidence,
+        probabilities: label==="NORMAL"
+          ? {NORMAL:confidence,WARNING:1-confidence,HIGH_RISK:0}
+          : label==="WARNING"
+            ? {NORMAL:(1-confidence)*.45,WARNING:confidence,HIGH_RISK:(1-confidence)*.55}
+            : {NORMAL:0,WARNING:1-confidence,HIGH_RISK:confidence}
+      });
+    };
+    runInference();
+    demoUseTimer=setInterval(runInference,850);
+  }
+
+  function stopDemoTraining() {
+    demoRunId+=1;
+    clientDemoActive=false;
+    clearInterval(demoUseTimer);
+    demoUseTimer=null;
+    setDemoControls(false);
+    byId("demoProgress").hidden=true;
+    byId("collectionBadge").classList.remove("on");
+    byId("operationMessage").textContent="模拟已停止，已恢复真实数据模式。";
+    send({type:"get_status"});
+  }
+
+  function drawChart() {
+    const canvas = byId("chart");
+    const ctx = canvas.getContext("2d");
+    const width = canvas.width;
+    const height = canvas.height;
+    ctx.clearRect(0, 0, width, height);
+    ctx.strokeStyle = "rgba(177,80,61,.12)";
+    ctx.lineWidth = 1;
+    for (let y = 20; y < height; y += 40) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+    }
+    if (!values.length) return;
+    const gradient = ctx.createLinearGradient(0, 0, width, 0);
+    gradient.addColorStop(0, "#8A3928");
+    gradient.addColorStop(.48, "#FF7F65");
+    gradient.addColorStop(1, "#FFB2A3");
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    values.forEach((value, index) => {
+      const x = values.length === 1 ? 0 : index * width / (values.length - 1);
+      const y = height - Math.max(0, Math.min(100, value)) / 100 * height;
+      index === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+
+  byId("connectBtn").onclick = connect;
+  byId("startCollect").onclick = () => {
+    const label = byId("labelSelect").value;
+    if (send({ type: "set_label", label })) {
+      send({ type: "collection", enabled: true });
+      byId("operationMessage").textContent = `正在采集 ${label} 数据。`;
     }
   };
-};
-document.getElementById('btnAoff').onclick=()=>{ try{wsA && wsA.close();}catch{} setStatus(statusA,null,'未连接'); };
-
-// ===== Web Serial for UNO (same UI row)
-const statusB=document.getElementById('statusB'); let port=null, reader=null, reading=false; const textDecoder=new TextDecoderStream(); let serBuf='';
-async function connectB(){
-  if(!('serial' in navigator)){ alert('请使用 Chrome/Edge (Web Serial)'); return; }
-  try{
-    port=await navigator.serial.requestPort(); await port.open({baudRate:115200});
-    setStatus(statusB,true,'串口已连');
-    const readable=port.readable.pipeThrough(textDecoder); reader=readable.getReader(); reading=true;
-    serBuf=''; (async ()=>{ try{ while(reading){ const {value,done}=await reader.read(); if(done) break; if(value) onSerialChunk(value); } } catch(e){ console.warn('serial error',e); } finally { try{ reader.releaseLock(); }catch{} }})();
-  }catch(e){ console.error(e); setStatus(statusB,false,'串口连接失败'); }
-}
-async function disconnectB(){ reading=false; try{ reader && reader.cancel(); }catch{} try{ port && port.close(); }catch{} setStatus(statusB,null,'未连接'); }
-document.getElementById('btnB').onclick=connectB; document.getElementById('btnBoff').onclick=disconnectB;
-function onSerialChunk(t){ serBuf+=t; let i; while((i=serBuf.indexOf('\n'))>=0){ const line=serBuf.slice(0,i).trim(); serBuf=serBuf.slice(i+1); if(line) onSerialLine(line); } }
-const serVals={A1:NaN,B1:NaN,C1:NaN,A2:NaN,B2:NaN,C2:NaN};
-function onSerialLine(line){
-  rawB.textContent=line;
-  if(line.startsWith('THR:')){ const v=parseFloat(line.slice(4)); if(Number.isFinite(v)){ thr.value=Math.round(v*WEB_SCALE); thrOut.textContent=thr.value; render(); } return; }
-  if(line.startsWith('v:')||line.startsWith('V:')){ const v=parseFloat(line.slice(2)); if(Number.isFinite(v)) pushValue(v); return; }
-  if(line.startsWith('BASE_RATIO_LAST')){ const r=parseFloat(line.split(':')[1]); if(Number.isFinite(r)) ratioText.textContent=r.toFixed(3); else ratioText.textContent='NA'; return; }
-  const m=line.match(/^([ABC][12])\s*:\s*([-+]?\d+(\.\d+)?)\s*N/i); if(m){ serVals[m[1].toUpperCase()]=parseFloat(m[2]); updateTiles(serVals); }
-}
-
-// ===== Demo
-let demo=null,t=0; const btnDemo=document.getElementById('btnDemo');
-function startDemo(){ if(demo) return; demo=setInterval(()=>{ t+=0.04; const base=30*Math.sin(t*0.8)+18*Math.sin(t*0.17+1.2); const noise=(Math.random()-0.5)*14; const burst=(Math.random()<0.02)?(Math.random()*80-40):0; pushValue(base+noise+burst); },20); btnDemo.textContent='Demo 关'; }
-function stopDemo(){ clearInterval(demo); demo=null; btnDemo.textContent='Demo 开'; }
-btnDemo.onclick=()=> demo ? stopDemo() : startDemo();
-
-render();
+  byId("stopCollect").onclick = () => send({ type: "collection", enabled: false });
+  byId("trainBtn").onclick = () => send({ type: "train_model" });
+  byId("demoTrainingBtn").onclick = () => clientDemoActive ? stopDemoTraining() : startDemoTraining();
+  connect();
 </script>
 </body>
 </html>

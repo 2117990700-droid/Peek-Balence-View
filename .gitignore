@@ -1,0 +1,14 @@
+node_modules/
+__pycache__/
+*.py[cod]
+.env
+*.log
+npm-debug.log*
+
+# Local data generated during development
+data/balance_dataset.csv
+
+# Local archives and backup snapshots
+node_modules.rar
+server.before-ai.js
+package.before-ai.json

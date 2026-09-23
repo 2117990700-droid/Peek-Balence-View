@@ -1,0 +1,17 @@
+{
+  "name": "peek-balance-view",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sensor fusion, data collection and AI prediction for PEEK Balance View",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js",
+    "train": "node ai_prediction/train.js",
+    "demo-model": "node ai_prediction/demo.js",
+    "smoke": "node smoke_test.js"
+  },
+  "dependencies": {
+    "serialport": "^13.0.0",
+    "ws": "^8.21.3"
+  }
+}

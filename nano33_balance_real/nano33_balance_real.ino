@@ -114,7 +114,57 @@ void wsBroadcastMetrics(float chestRMS, float waistRMS,
                         const char* STATE, const char* FALL_RISK,
                         float k_eff, float freqHz,
                         float thrSway, float thrCW);
+// ========= AI Feature Structure =========
 
+struct AIIMUFeatures {
+  float chestSway;
+  float waistSway;
+  float swayDifference;
+  float stepFrequency;
+  float balanceScore;
+  const char* fallRisk;
+};
+
+AIIMUFeatures imuAI;
+
+
+// ========= AI Feature Extraction =========
+
+AIIMUFeatures extractIMUFeatures(
+    float chestRMS,
+    float waistRMS,
+    float freqHz,
+    const char* risk
+){
+  AIIMUFeatures f;
+
+  f.chestSway = chestRMS;
+  f.waistSway = waistRMS;
+
+  f.swayDifference = fabsf(chestRMS - waistRMS);
+
+  f.stepFrequency = freqHz;
+
+  float score = 100.0f;
+
+  score -= chestRMS * 80.0f;
+  score -= waistRMS * 80.0f;
+  score -= f.swayDifference * 50.0f;
+
+  if(freqHz < 0.3f)
+    score -= 10.0f;
+
+  if(score < 0)
+    score = 0;
+
+  if(score > 100)
+    score = 100;
+
+  f.balanceScore = score;
+  f.fallRisk = risk;
+
+  return f;
+}
 // ====== Utilities ======
 inline void mapBodyAxes(int16_t rx,int16_t ry,int16_t rz,
                         const uint8_t M[3], const int8_t S[3],
@@ -214,30 +264,75 @@ void onWsEvent(WStype_t type, uint8_t * payload, size_t length) {
   }
 }
 
-// ====== Broadcast current metrics to Node/UI ======
 void wsBroadcastMetrics(float chestRMS, float waistRMS,
                         const char* STATE, const char* FALL_RISK,
                         float k_eff, float freqHz,
                         float thrSway, float thrCW) {
+
   if (!wsEnabled) return;
-  char buf[256];
-  int n = snprintf(buf, sizeof(buf),
+
+  char buf[512];
+
+  int n = snprintf(
+    buf,
+    sizeof(buf),
+
     "{"
-      "\"type\":\"nano\"," 
+      "\"type\":\"nano\","
+
       "\"chestRMS\":%.3f,"
       "\"waistRMS\":%.3f,"
-      "\"state\":\"%s\"," 
-      "\"fallRisk\":\"%s\"," 
+
+      "\"state\":\"%s\","
+      "\"fallRisk\":\"%s\","
+
       "\"k\":%.2f,"
       "\"freqHz\":%.2f,"
-      "\"thrSway\":%.3f,"
-      "\"thrCW\":%.3f"
-    "}",
-    chestRMS, waistRMS, STATE, FALL_RISK, k_eff, freqHz, thrSway, thrCW
-  );
-  if (n > 0 && n < (int)sizeof(buf)) wsClient.sendTXT(buf);
-}
 
+      "\"thrSway\":%.3f,"
+      "\"thrCW\":%.3f,"
+
+      "\"ai\":{"
+        "\"timestamp\":%lu,"
+        "\"chestSway\":%.4f,"
+        "\"waistSway\":%.4f,"
+        "\"swayDifference\":%.4f,"
+        "\"stepFrequency\":%.3f,"
+        "\"balanceScore\":%.2f,"
+        "\"fallRisk\":\"%s\""
+      "}"
+
+    "}",
+
+    chestRMS,
+    waistRMS,
+
+    STATE,
+    FALL_RISK,
+
+    k_eff,
+    freqHz,
+
+    thrSway,
+    thrCW,
+
+
+    millis(),
+
+    imuAI.chestSway,
+    imuAI.waistSway,
+    imuAI.swayDifference,
+    imuAI.stepFrequency,
+    imuAI.balanceScore,
+    imuAI.fallRisk
+  );
+
+
+  if(n > 0 && n < (int)sizeof(buf))
+  {
+      wsClient.sendTXT(buf);
+  }
+}
 // ========================== Setup ==========================
 void setup() {
   Serial.begin(115200);
@@ -408,7 +503,14 @@ void loop() {
     } else {
       FALL_RISK = imbalance ? "MEDIUM" : "LOW";
     }
+// ===== AI Feature Generation =====
 
+imuAI = extractIMUFeatures(
+    chestRMS,
+    waistRMS,
+    freqEMA,
+    FALL_RISK
+);
     // Send to Node/UI
     wsBroadcastMetrics(chestRMS, waistRMS, STATE, FALL_RISK,
                        k_eff, freqEMA, SWAY_RMS_HIGH_eff, CHEST_WAIST_DELTA_eff);

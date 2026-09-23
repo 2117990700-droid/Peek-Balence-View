@@ -1,0 +1,65 @@
+{
+  "accuracy": 1.0,
+  "demo_mode": true,
+  "dataset": "data/demo_balance_dataset.csv",
+  "sample_count": 60,
+  "model_config": {
+    "algorithm": "RandomForestClassifier",
+    "n_estimators": 100,
+    "max_depth": 6,
+    "criterion": "gini",
+    "min_samples_leaf": 2
+  },
+  "class_counts": {
+    "NORMAL": 20,
+    "HIGH_RISK": 20,
+    "WARNING": 20
+  },
+  "classification_report": {
+    "HIGH_RISK": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 4.0
+    },
+    "NORMAL": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 4.0
+    },
+    "WARNING": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 4.0
+    },
+    "accuracy": 1.0,
+    "macro avg": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 12.0
+    },
+    "weighted avg": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 12.0
+    }
+  },
+  "feature_importance": {
+    "imuBalanceScore": 0.21827020132800037,
+    "chestSway": 0.19694073202839218,
+    "footStabilityScore": 0.1951959926414874,
+    "footSway": 0.1405602607660807,
+    "waistSway": 0.12489933074489559,
+    "stepFrequency": 0.05693796292332022,
+    "lrBalance": 0.018636375113942817,
+    "apBalance": 0.01768293115904279,
+    "swayDifference": 0.017500668528066792,
+    "totalPressure": 0.004666908312243938,
+    "leftPressure": 0.004436459279139217,
+    "rightPressure": 0.004272177175388128
+  }
+}
